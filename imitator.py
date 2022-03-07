@@ -14,6 +14,7 @@ class Imitator(object):
         self.ignore_keyboard_repeat = ignore_keyboard_repeat
         self.event_list = []
         self.keep_listening = True
+        self.repeating = False
 
     def insert_event(self,
                      event: Union[MouseEvent, KeyboardEvent]):
@@ -24,7 +25,7 @@ class Imitator(object):
                 return
         elif self.ignore_keyboard_repeat and isinstance(event, KeyboardEvent):
             if len(self.event_list) > 0 and isinstance(self.event_list[-1], KeyboardEvent):
-                if event.key == self.event_list[-1].key:
+                if event == self.event_list[-1]:
                     return
         self.event_list.append(event)
 
@@ -72,22 +73,25 @@ class Imitator(object):
         keyboard_listener.start()
 
     def stop_listening(self):
+        self.event_list.pop()
+        self.event_list.pop()
         print(self.event_list)
         self.keep_listening = False
 
-    def reappear(self,
-                 times: int,
-                 reappear_interval: float = 0.1,
-                 round_interval: float = 1):
-        class KeepReappearing(object):
+    def repeat(self,
+               times: int,
+               repeat_interval: float = 0.1,
+               round_interval: float = 1):
+        class KeepRepeating(object):
             flag = True
 
         def unexpected_move(x: int, y: int):
             if MouseMoveEvent((x, y)) not in self.event_list:
-                KeepReappearing.flag = False
+                KeepRepeating.flag = False
                 return False
 
-        KeepReappearing.flag = True
+        KeepRepeating.flag = True
+        self.repeating = True
 
         if times < 0:
             times = sys.maxsize
@@ -98,10 +102,12 @@ class Imitator(object):
         for _ in range(times):
             for event in self.event_list:
                 event.reappear()
-                time.sleep(reappear_interval)
+                time.sleep(repeat_interval)
             time.sleep(round_interval)
-            if not KeepReappearing.flag:
+            if not KeepRepeating.flag:
                 break
+
+        self.repeating = False
 
 
 if __name__ == '__main__':
@@ -109,20 +115,18 @@ if __name__ == '__main__':
     import PySimpleGUI as sg
     import threading
 
-    mutex = threading.Lock()
-
     layout = [
-        [sg.Text('Reappear Times:'), sg.InputText('-1', (5, 1), key='reappear_times'),
-         sg.Text('Reappear Interval:'), sg.InputText('0.1', (5, 1), key='reappear_interval'),
-         sg.Text('Round Interval:'), sg.InputText('0.1', (5, 1), key='round_interval')],
+        [sg.Text('Repeat Times:'), sg.InputText('-1', (5, 1), key='repeat_times')],
+        [sg.Text('Repeat Interval:'), sg.InputText('0.1', (5, 1), key='repeat_interval'),
+         sg.Text('Round Interval:'), sg.InputText('1', (5, 1), key='round_interval')],
         [sg.Text('Ignore Mouse Repeat:'),
          sg.Radio('True', 'Ignore Mouse Repeat', True, key='ignore_mouse_repeat'),
          sg.Radio('False', 'Ignore Mouse Repeat')],
         [sg.Text('Ignore Keyboard Repeat:'),
          sg.Radio('True', 'Ignore Keyboard Repeat', True, key='ignore_keyboard_repeat'),
          sg.Radio('False', 'Ignore Keyboard Repeat')],
-        [sg.Button('Start Listening'), sg.Button('Stop Listening'), sg.Button('Reappear'),
-         sg.Button('Save Operations'), sg.Button('Load Operations')]
+        [sg.Button('Start Listening'), sg.Button('Stop Listening'), sg.Button('Repeat')],
+        [sg.Button('Save Operations'), sg.Button('Load Operations')]
     ]
     window = sg.Window('Imitator', layout)
     imitator = None
@@ -131,35 +135,44 @@ if __name__ == '__main__':
         if ui_event is None:
             break
         elif ui_event == 'Start Listening':
-            # time.sleep(1)
+            if imitator is not None and imitator.repeating:
+                continue
             imitator = Imitator(values['ignore_mouse_repeat'],
                                 values['ignore_keyboard_repeat'])
             imitator.listen_mouse()
             imitator.listen_keyboard()
         elif ui_event == 'Stop Listening':
-            if imitator is not None:
+            if imitator is not None and not imitator.repeating:
                 imitator.stop_listening()
-        elif ui_event == 'Reappear':
-            if imitator is not None:
-                mutex.acquire()
-                imitator_thread = threading.Thread(target=imitator.reappear,
-                                                   args=(int(values['reappear_times']),
-                                                         float(values['reappear_interval']),
+        elif ui_event == 'Repeat':
+            if imitator is not None and not imitator.repeating:
+                imitator_thread = threading.Thread(target=imitator.repeat,
+                                                   args=(int(values['repeat_times']),
+                                                         float(values['repeat_interval']),
                                                          float(values['round_interval'])))
                 imitator_thread.start()
 
-        elif ui_event == 'Save Operations':
-            mutex.release()
+        elif ui_event == 'Save Operations' and imitator is not None and not imitator.repeating:
             event_list = []
             for event in imitator.event_list:
                 event_list.append(event)
-            file_path = sg.popup_get_file('Save Operations', save_as=True)
-            with open(file_path, 'wb') as file:
-                pickle.dump(event_list, file)
+            file_path = sg.popup_get_file('Save Operations', default_extension='.opl', save_as=True)
+            if file_path != '' and file_path is not None:
+                try:
+                    with open(file_path, 'wb') as file:
+                        pickle.dump(event_list, file)
+                except BaseException as e:
+                    print(e)
 
         elif ui_event == 'Load Operations':
+            if imitator is not None and imitator.repeating:
+                continue
             file_path = sg.popup_get_file('Load Operations')
-            with open(file_path, 'rb') as file:
-                imitator = Imitator(values['ignore_mouse_repeat'],
-                                    values['ignore_keyboard_repeat'])
-                imitator.event_list = pickle.load(file)
+            if file_path != '' and file_path is not None:
+                try:
+                    with open(file_path, 'rb') as file:
+                        imitator = Imitator(values['ignore_mouse_repeat'],
+                                            values['ignore_keyboard_repeat'])
+                        imitator.event_list = pickle.load(file)
+                except BaseException as e:
+                    print(e)
