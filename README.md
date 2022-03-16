@@ -10,7 +10,7 @@ This is a tool that can help you save time for repeated operations, such as repe
 ## Instructions
 - **Repeat Times**(*InputText*)
 
-How many times you would like to Repeat. If you enter any number **less than 0**, the program will repeat **sys.maxsize** times. Default value is **-1**(repeat **sys.maxsize** times).
+How many times you would like to repeat. If you enter any number **less than 0**, the program will repeat **sys.maxsize** times. Default value is **-1**(repeat **sys.maxsize** times).
 
 - **Repeat Interval**(*InputText*)
 
